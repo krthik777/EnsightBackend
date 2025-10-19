@@ -8,13 +8,15 @@ const Alert = require('../models/Alert');
 exports.receivePowerData = async (req, res) => {
   try {
     // Support both formats: old format and new ESP32 format
-    let userId, roomId, voltage, current, power, energy, timestamp;
+    let userId, roomId, voltage, current, power, energy;
+    
+    // Backend-generated timestamp - ignore any timestamp from IoT device
+    const timestamp = new Date();
     
     // Check if it's the new ESP32 format
     if (req.body.current_rms_a !== undefined && req.body.apparent_power_va !== undefined) {
       // New ESP32 format
       const { current_rms_a, apparent_power_va } = req.body;
-      timestamp = req.body.timestamp || Date.now();
       
       // Extract or use default values
       // You can set default userId and roomId, or get from query params/headers
@@ -55,7 +57,7 @@ exports.receivePowerData = async (req, res) => {
       current: parseFloat(current.toFixed(3)),
       power: parseFloat(power.toFixed(2)),
       energy: energy || 0,
-      timestamp: timestamp ? new Date(timestamp) : new Date()
+      timestamp: timestamp // Always use backend-generated timestamp
     });
 
     // Check for high usage alerts

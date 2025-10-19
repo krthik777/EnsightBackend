@@ -110,10 +110,17 @@ exports.getOverallConsumption = async (req, res) => {
         startDate = new Date(now.setHours(0, 0, 0, 0));
     }
 
+    console.log(`📊 Querying PowerReadings:`.cyan);
+    console.log(`   User ID: ${req.user._id}`.gray);
+    console.log(`   Period: ${period}`.gray);
+    console.log(`   Start Date: ${startDate}`.gray);
+
     const readings = await PowerReading.find({
       userId: req.user._id,
       timestamp: { $gte: startDate }
     });
+
+    console.log(`   Found ${readings.length} readings`.gray);
 
     // Calculate totals
     let totalPower = 0;
@@ -137,22 +144,38 @@ exports.getOverallConsumption = async (req, res) => {
       userId: req.user._id 
     }).sort({ timestamp: -1 });
 
+    // Calculate current values from latest reading or averages
+    const currentPowerW = latestReading ? latestReading.power : (count > 0 ? totalPower / count : 0);
+    const currentA = latestReading ? latestReading.current : (count > 0 ? avgCurrent / count : 0);
+    const voltageV = latestReading ? latestReading.voltage : (count > 0 ? avgVoltage / count : 230);
+    
+    // Max capacity (you can make this configurable via settings)
+    const maxCapacityW = 1000;
+    const capacityPercentage = maxCapacityW > 0 ? ((currentPowerW / maxCapacityW) * 100) : 0;
+
     res.status(200).json({
       success: true,
       period,
       data: {
-        currentPower: latestReading ? latestReading.power : 0,
-        currentVoltage: latestReading ? latestReading.voltage : 0,
-        currentCurrent: latestReading ? latestReading.current : 0,
-        totalEnergy: totalEnergy.toFixed(2),
-        avgPower: count > 0 ? (totalPower / count).toFixed(2) : 0,
-        avgVoltage: count > 0 ? (avgVoltage / count).toFixed(2) : 0,
-        avgCurrent: count > 0 ? (avgCurrent / count).toFixed(2) : 0,
-        maxPower: maxPower.toFixed(2),
+        // Current values (matching frontend expected format)
+        currentPowerW: parseFloat(currentPowerW.toFixed(2)),
+        currentA: parseFloat(currentA.toFixed(3)),
+        voltageV: parseFloat(voltageV.toFixed(2)),
+        capacityPercentage: parseFloat(capacityPercentage.toFixed(2)),
+        maxCapacityW: maxCapacityW,
+        timestamp: latestReading ? latestReading.timestamp : new Date(),
+        
+        // Additional statistics
+        totalEnergy: parseFloat(totalEnergy.toFixed(2)),
+        avgPower: count > 0 ? parseFloat((totalPower / count).toFixed(2)) : 0,
+        avgVoltage: count > 0 ? parseFloat((avgVoltage / count).toFixed(2)) : 0,
+        avgCurrent: count > 0 ? parseFloat((avgCurrent / count).toFixed(3)) : 0,
+        maxPower: parseFloat(maxPower.toFixed(2)),
         readingsCount: count
       }
     });
   } catch (error) {
+    console.error(`❌ Error in getOverallConsumption:`.red, error.message);
     res.status(500).json({
       success: false,
       message: error.message
