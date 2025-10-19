@@ -1,0 +1,352 @@
+{
+  "info": {
+    "name": "Energy Dashboard API",
+    "description": "Complete API collection for Energy Dashboard Backend",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:5000"
+    },
+    {
+      "key": "token",
+      "value": ""
+    },
+    {
+      "key": "userId",
+      "value": ""
+    },
+    {
+      "key": "roomId",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "Authentication",
+      "item": [
+        {
+          "name": "Register User",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"John Doe\",\n  \"email\": \"john.doe@example.com\",\n  \"password\": \"password123\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/user/register",
+              "host": ["{{base_url}}"],
+              "path": ["api", "user", "register"]
+            }
+          }
+        },
+        {
+          "name": "Login User",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"john.doe@example.com\",\n  \"password\": \"password123\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/user/login",
+              "host": ["{{base_url}}"],
+              "path": ["api", "user", "login"]
+            }
+          }
+        },
+        {
+          "name": "Get Profile",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/user/profile",
+              "host": ["{{base_url}}"],
+              "path": ["api", "user", "profile"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Power Data",
+      "item": [
+        {
+          "name": "Send Power Data (ESP32)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userId\": \"{{userId}}\",\n  \"roomId\": \"{{roomId}}\",\n  \"voltage\": 239,\n  \"current\": 8.8,\n  \"power\": 483,\n  \"energy\": 0.12\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/power",
+              "host": ["{{base_url}}"],
+              "path": ["api", "power"]
+            }
+          }
+        },
+        {
+          "name": "Get Latest Reading",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/power/latest",
+              "host": ["{{base_url}}"],
+              "path": ["api", "power", "latest"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Rooms",
+      "item": [
+        {
+          "name": "Get All Rooms",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/room",
+              "host": ["{{base_url}}"],
+              "path": ["api", "room"]
+            }
+          }
+        },
+        {
+          "name": "Create Room",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Living Room\",\n  \"icon\": \"sofa\",\n  \"threshold\": 2000\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/room",
+              "host": ["{{base_url}}"],
+              "path": ["api", "room"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Consumption",
+      "item": [
+        {
+          "name": "Get Room Consumption",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/consumption/room?period=today",
+              "host": ["{{base_url}}"],
+              "path": ["api", "consumption", "room"],
+              "query": [
+                {
+                  "key": "period",
+                  "value": "today"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Overall Consumption",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/consumption/overall?period=today",
+              "host": ["{{base_url}}"],
+              "path": ["api", "consumption", "overall"],
+              "query": [
+                {
+                  "key": "period",
+                  "value": "today"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Consumption Stats",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/consumption/stats",
+              "host": ["{{base_url}}"],
+              "path": ["api", "consumption", "stats"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Forecasting",
+      "item": [
+        {
+          "name": "Monthly Forecast",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/forecast/monthly",
+              "host": ["{{base_url}}"],
+              "path": ["api", "forecast", "monthly"]
+            }
+          }
+        },
+        {
+          "name": "Daily Forecast",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/forecast/daily",
+              "host": ["{{base_url}}"],
+              "path": ["api", "forecast", "daily"]
+            }
+          }
+        },
+        {
+          "name": "Weekly Trend",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/forecast/weekly",
+              "host": ["{{base_url}}"],
+              "path": ["api", "forecast", "weekly"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Settings",
+      "item": [
+        {
+          "name": "Get Settings",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/settings",
+              "host": ["{{base_url}}"],
+              "path": ["api", "settings"]
+            }
+          }
+        },
+        {
+          "name": "Update Budget Settings",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"monthly\": 400,\n  \"currency\": \"INR\",\n  \"ratePerKwh\": 6.5\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/settings/budget",
+              "host": ["{{base_url}}"],
+              "path": ["api", "settings", "budget"]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}
