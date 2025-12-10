@@ -1,0 +1,1308 @@
+{
+	"info": {
+		"_postman_id": "energy-dashboard-api-2025",
+		"name": "Energy Dashboard API - Complete Collection",
+		"description": "Complete API collection for Energy Dashboard Backend with IoT integration, consumption tracking, NILM, forecasting, and user management. All 40+ endpoints included.",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+		"_exporter_id": "energy-dashboard"
+	},
+	"item": [
+		{
+			"name": "Authentication",
+			"item": [
+				{
+					"name": "Register User",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 201) {",
+									"    const response = pm.response.json();",
+									"    pm.environment.set('auth_token', response.data.token);",
+									"    pm.environment.set('user_id', response.data._id);",
+									"    console.log('✅ User registered. Token saved.');",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"John Doe\",\n  \"email\": \"john.doe@example.com\",\n  \"password\": \"password123\",\n  \"phone\": \"+91-9876543210\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/user/register",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"user",
+								"register"
+							]
+						},
+						"description": "Register a new user account. Returns JWT token for authentication."
+					},
+					"response": []
+				},
+				{
+					"name": "Login User",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 200) {",
+									"    const response = pm.response.json();",
+									"    pm.environment.set('auth_token', response.data.token);",
+									"    pm.environment.set('user_id', response.data._id);",
+									"    console.log('✅ Login successful. Token saved.');",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"email\": \"john.doe@example.com\",\n  \"password\": \"password123\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/user/login",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"user",
+								"login"
+							]
+						},
+						"description": "Login with email and password. Returns JWT token valid for 7 days."
+					},
+					"response": []
+				},
+				{
+					"name": "Get User Profile",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{auth_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/user/profile",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"user",
+								"profile"
+							]
+						},
+						"description": "Get current user's profile information (Protected route)."
+					},
+					"response": []
+				},
+				{
+					"name": "Update User Profile",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{auth_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"John Updated\",\n  \"phone\": \"+91-9876543211\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/user/profile",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"user",
+								"profile"
+							]
+						},
+						"description": "Update user profile details (Protected route)."
+					},
+					"response": []
+				}
+			],
+			"description": "User authentication endpoints - Register, Login, Profile management"
+		},
+		{
+			"name": "Power Readings (IoT)",
+			"item": [
+				{
+					"name": "Receive Power Data from ESP32",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"current_rms_a\": 1.5,\n  \"apparent_power_va\": 345,\n  \"userId\": \"{{user_id}}\",\n  \"roomId\": \"{{room_id}}\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/power",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"power"
+							]
+						},
+						"description": "Receive power data from ESP32 IoT device. Accepts current_rms_a and apparent_power_va. Timestamp is auto-generated on backend. Can also accept userId/roomId from query params or headers (x-user-id, x-room-id)."
+					},
+					"response": []
+				},
+				{
+					"name": "Receive Power Data (Alternative Headers)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "x-user-id",
+								"value": "{{user_id}}",
+								"type": "text"
+							},
+							{
+								"key": "x-room-id",
+								"value": "{{room_id}}",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"current_rms_a\": 2.3,\n  \"apparent_power_va\": 529\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/power",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"power"
+							]
+						},
+						"description": "Send power data with userId and roomId in headers instead of body."
+					},
+					"response": []
+				},
+				{
+					"name": "Get Latest Power Reading",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{auth_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/power/latest?roomId={{room_id}}",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"power",
+								"latest"
+							],
+							"query": [
+								{
+									"key": "roomId",
+									"value": "{{room_id}}",
+									"description": "Optional: Filter by specific room"
+								}
+							]
+						},
+						"description": "Get the latest power reading. Optional roomId query parameter to filter by room (Protected route)."
+					},
+					"response": []
+				},
+				{
+					"name": "Get Power Readings with Pagination",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{auth_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/power/readings?roomId={{room_id}}&limit=50&page=1",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"power",
+								"readings"
+							],
+							"query": [
+								{
+									"key": "roomId",
+									"value": "{{room_id}}",
+									"description": "Optional: Filter by room"
+								},
+								{
+									"key": "startDate",
+									"value": "2025-10-19T00:00:00Z",
+									"description": "Optional: Start date",
+									"disabled": true
+								},
+								{
+									"key": "endDate",
+									"value": "2025-10-22T23:59:59Z",
+									"description": "Optional: End date",
+									"disabled": true
+								},
+								{
+									"key": "limit",
+									"value": "50",
+									"description": "Records per page (default: 100)"
+								},
+								{
+									"key": "page",
+									"value": "1",
+									"description": "Page number (default: 1)"
+								}
+							]
+						},
+						"description": "Get paginated power readings with optional filters: roomId, startDate, endDate, limit, page (Protected route)."
+					},
+					"response": []
+				}
+			],
+			"description": "IoT Power data ingestion and retrieval endpoints"
+		},
+		{
+			"name": "Consumption Analytics",
+			"item": [
+				{
+					"name": "Get Overall Consumption",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{auth_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/consumption/overall?period=today",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"consumption",
+								"overall"
+							],
+							"query": [
+								{
+									"key": "period",
+									"value": "today",
+									"description": "Options: today, day, week, month, year"
+								}
+							]
+						},
+						"description": "Get overall household consumption statistics including currentPowerW, currentA, voltageV, capacityPercentage, totalEnergy, avgPower, maxPower, and readingsCount (Protected route)."
+					},
+					"response": []
+				},
+				{
+					"name": "Get Room Consumption",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{auth_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/consumption/room?roomId={{room_id}}&period=today",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"consumption",
+								"room"
+							],
+							"query": [
+								{
+									"key": "roomId",
+									"value": "{{room_id}}",
+									"description": "Optional: Specific room ID"
+								},
+								{
+									"key": "period",
+									"value": "today",
+									"description": "Options: today, week, month"
+								}
+							]
+						},
+						"description": "Get consumption breakdown by room. Returns currentPower, totalEnergy, avgPower, maxPower, and readingsCount per room (Protected route)."
+					},
+					"response": []
+				},
+				{
+					"name": "Get Consumption Stats",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{auth_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/consumption/stats",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"consumption",
+								"stats"
+							]
+						},
+						"description": "Get consumption statistics including today's energy/cost, monthly energy/cost/budget usage, peak power, and remaining budget (Protected route)."
+					},
+					"response": []
+				}
+			],
+			"description": "Consumption analytics and statistics endpoints"
+		},
+		{
+			"name": "Room Management",
+			"item": [
+				{
+					"name": "Get All Rooms",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 200) {",
+									"    const response = pm.response.json();",
+									"    if (response.data && response.data.length > 0) {",
+									"        pm.environment.set('room_id', response.data[0]._id);",
+									"        console.log('✅ Room ID saved:', response.data[0]._id);",
+									"    }",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{auth_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/room",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"room"
+							]
+						},
+						"description": "Get all rooms for the current user (Protected route)."
+					},
+					"response": []
+				},
+				{
+					"name": "Get Single Room",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{auth_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/room/{{room_id}}",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"room",
+								"{{room_id}}"
+							]
+						},
+						"description": "Get details of a specific room by ID (Protected route)."
+					},
+					"response": []
+				},
+				{
+					"name": "Create Room",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{auth_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"Living Room\",\n  \"icon\": \"living-room\",\n  \"threshold\": 1500\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/room",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"room"
+							]
+						},
+						"description": "Create a new room. Icon options: bedroom, kitchen, living-room, bathroom, office, garage (Protected route)."
+					},
+					"response": []
+				},
+				{
+					"name": "Update Room",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{auth_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"Living Room Updated\",\n  \"threshold\": 2000\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/room/{{room_id}}",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"room",
+								"{{room_id}}"
+							]
+						},
+						"description": "Update room details (Protected route)."
+					},
+					"response": []
+				},
+				{
+					"name": "Delete Room",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{auth_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "DELETE",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/room/{{room_id}}",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"room",
+								"{{room_id}}"
+							]
+						},
+						"description": "Delete a room (Protected route)."
+					},
+					"response": []
+				}
+			],
+			"description": "Room management endpoints - CRUD operations"
+		},
+		{
+			"name": "Alerts & Notifications",
+			"item": [
+				{
+					"name": "Get All Alerts",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{auth_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/alerts?unreadOnly=false",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"alerts"
+							],
+							"query": [
+								{
+									"key": "unreadOnly",
+									"value": "false",
+									"description": "Filter unread alerts only"
+								},
+								{
+									"key": "type",
+									"value": "high_usage",
+									"description": "Filter by type: high_usage, budget_warning, budget_exceeded",
+									"disabled": true
+								},
+								{
+									"key": "severity",
+									"value": "warning",
+									"description": "Filter by severity: info, warning, critical",
+									"disabled": true
+								}
+							]
+						},
+						"description": "Get all alerts for the user with optional filters (Protected route)."
+					},
+					"response": []
+				},
+				{
+					"name": "Mark Alert as Read",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{auth_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "PUT",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/alerts/{{alert_id}}/read",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"alerts",
+								"{{alert_id}}",
+								"read"
+							]
+						},
+						"description": "Mark a specific alert as read (Protected route)."
+					},
+					"response": []
+				},
+				{
+					"name": "Mark All Alerts as Read",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{auth_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "PUT",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/alerts/read-all",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"alerts",
+								"read-all"
+							]
+						},
+						"description": "Mark all alerts as read for the current user (Protected route)."
+					},
+					"response": []
+				},
+				{
+					"name": "Check Budget Alerts",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{auth_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/alerts/check-budget",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"alerts",
+								"check-budget"
+							]
+						},
+						"description": "Manually trigger budget alert check. Creates alerts if budget thresholds are exceeded (Protected route)."
+					},
+					"response": []
+				},
+				{
+					"name": "Delete Alert",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{auth_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "DELETE",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/alerts/{{alert_id}}",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"alerts",
+								"{{alert_id}}"
+							]
+						},
+						"description": "Delete a specific alert (Protected route)."
+					},
+					"response": []
+				}
+			],
+			"description": "Alert and notification management endpoints"
+		},
+		{
+			"name": "NILM (Appliance Detection)",
+			"item": [
+				{
+					"name": "Predict Appliances",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{auth_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"roomId\": \"{{room_id}}\",\n  \"power\": 1200,\n  \"voltage\": 230,\n  \"current\": 5.2\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/nilm/predict",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"nilm",
+								"predict"
+							]
+						},
+						"description": "Predict active appliances based on power signature. Detects: Air Conditioner, Refrigerator, Washing Machine, Microwave, TV, Fan, LED Bulbs, Heater, Laptop (Protected route)."
+					},
+					"response": []
+				},
+				{
+					"name": "Get Appliance History",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{auth_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/nilm/history?roomId={{room_id}}&days=7",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"nilm",
+								"history"
+							],
+							"query": [
+								{
+									"key": "roomId",
+									"value": "{{room_id}}",
+									"description": "Optional: Filter by room"
+								},
+								{
+									"key": "days",
+									"value": "7",
+									"description": "Number of days (default: 7)"
+								}
+							]
+						},
+						"description": "Get appliance detection history for specified period (Protected route)."
+					},
+					"response": []
+				},
+				{
+					"name": "Get Appliance Breakdown",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{auth_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/nilm/breakdown?period=month",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"nilm",
+								"breakdown"
+							],
+							"query": [
+								{
+									"key": "period",
+									"value": "month",
+									"description": "Options: week, month, year"
+								}
+							]
+						},
+						"description": "Get energy consumption breakdown by appliance type (Protected route)."
+					},
+					"response": []
+				}
+			],
+			"description": "NILM (Non-Intrusive Load Monitoring) - Appliance detection and tracking"
+		},
+		{
+			"name": "Forecasting",
+			"item": [
+				{
+					"name": "Get Monthly Forecast",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{auth_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/forecast/monthly",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"forecast",
+								"monthly"
+							]
+						},
+						"description": "Get monthly energy consumption forecast based on historical data. Predicts next 30 days (Protected route)."
+					},
+					"response": []
+				},
+				{
+					"name": "Get Daily Forecast",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{auth_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/forecast/daily?days=7",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"forecast",
+								"daily"
+							],
+							"query": [
+								{
+									"key": "days",
+									"value": "7",
+									"description": "Number of days to forecast (default: 7)"
+								}
+							]
+						},
+						"description": "Get daily energy consumption forecast (Protected route)."
+					},
+					"response": []
+				},
+				{
+					"name": "Get Weekly Trend",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{auth_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/forecast/weekly",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"forecast",
+								"weekly"
+							]
+						},
+						"description": "Get weekly consumption trend analysis comparing current week with previous weeks (Protected route)."
+					},
+					"response": []
+				}
+			],
+			"description": "Energy consumption forecasting and trend analysis"
+		},
+		{
+			"name": "Settings",
+			"item": [
+				{
+					"name": "Get All Settings",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{auth_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/settings",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"settings"
+							]
+						},
+						"description": "Get all user settings including budget and notifications (Protected route)."
+					},
+					"response": []
+				},
+				{
+					"name": "Update Settings",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{auth_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"budget\": {\n    \"monthly\": 500,\n    \"ratePerKwh\": 7.0\n  },\n  \"notifications\": {\n    \"highUsage\": true,\n    \"budgetWarning\": true,\n    \"budgetExceeded\": true,\n    \"weeklyReport\": true\n  }\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/settings",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"settings"
+							]
+						},
+						"description": "Update all settings at once (Protected route)."
+					},
+					"response": []
+				},
+				{
+					"name": "Get Budget Settings",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{auth_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/settings/budget",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"settings",
+								"budget"
+							]
+						},
+						"description": "Get only budget-related settings (Protected route)."
+					},
+					"response": []
+				},
+				{
+					"name": "Update Budget Settings",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{auth_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"monthly\": 600,\n  \"ratePerKwh\": 8.0\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/settings/budget",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"settings",
+								"budget"
+							]
+						},
+						"description": "Update only budget settings (Protected route)."
+					},
+					"response": []
+				},
+				{
+					"name": "Get Notification Settings",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{auth_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/settings/notifications",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"settings",
+								"notifications"
+							]
+						},
+						"description": "Get only notification preferences (Protected route)."
+					},
+					"response": []
+				},
+				{
+					"name": "Update Notification Settings",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{auth_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"highUsage\": true,\n  \"budgetWarning\": true,\n  \"budgetExceeded\": false,\n  \"weeklyReport\": true\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/settings/notifications",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"settings",
+								"notifications"
+							]
+						},
+						"description": "Update only notification preferences (Protected route)."
+					},
+					"response": []
+				}
+			],
+			"description": "User settings management - Budget and notification preferences"
+		}
+	],
+	"event": [
+		{
+			"listen": "prerequest",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					""
+				]
+			}
+		},
+		{
+			"listen": "test",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					""
+				]
+			}
+		}
+	],
+	"variable": [
+		{
+			"key": "base_url",
+			"value": "http://localhost:5000",
+			"type": "string"
+		},
+		{
+			"key": "auth_token",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "user_id",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "room_id",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "alert_id",
+			"value": "",
+			"type": "string"
+		}
+	]
+}
