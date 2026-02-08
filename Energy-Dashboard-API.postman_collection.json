@@ -2,7 +2,7 @@
 	"info": {
 		"_postman_id": "energy-dashboard-api-2025",
 		"name": "Energy Dashboard API - Complete Collection",
-		"description": "Complete API collection for Energy Dashboard Backend with IoT integration, consumption tracking, NILM, forecasting, and user management. All 40+ endpoints included.",
+		"description": "Complete API collection for Energy Dashboard Backend with IoT integration, appliance management, consumption tracking, NILM, forecasting, and user management. All 50+ endpoints included.",
 		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
 		"_exporter_id": "energy-dashboard"
 	},
@@ -451,6 +451,177 @@
 						"description": "Get consumption statistics including today's energy/cost, monthly energy/cost/budget usage, peak power, and remaining budget (Protected route)."
 					},
 					"response": []
+				},
+				{
+					"name": "Get Monthly Consumption (Calendar Month)",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{auth_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/consumption/monthly?year=2025&month=10",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"consumption",
+								"monthly"
+							],
+							"query": [
+								{
+									"key": "year",
+									"value": "2025",
+									"description": "Year (e.g., 2025)"
+								},
+								{
+									"key": "month",
+									"value": "10",
+									"description": "Month number (1-12, where 1=January, 12=December)"
+								}
+							]
+						},
+						"description": "Get consumption for a specific calendar month from 1st to last day. Returns summary (totalEnergyKWh, totalCostINR, avgDailyEnergyKWh, avgPowerW, maxPowerW, minPowerW), budget info (budgetUsedPercent, remainingKWh, isOverBudget), and dailyBreakdown for each day of the month (Protected route)."
+					},
+					"response": []
+				},
+				{
+					"name": "Get Consumption Trends - Daily",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{auth_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/consumption/trends?type=daily",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"consumption",
+								"trends"
+							],
+							"query": [
+								{
+									"key": "type",
+									"value": "daily",
+									"description": "Type: daily, weekly, or monthly"
+								},
+								{
+									"key": "roomId",
+									"value": "{{room_id}}",
+									"description": "Optional: Filter by room ID",
+									"disabled": true
+								}
+							]
+						},
+						"description": "Get daily consumption trends for the last 7 days plus hourly breakdown for today. Returns dailyBreakdown (last 7 days), hourlyBreakdown (24 hours), summary with currentWeekTotal, previousWeekTotal, weekChangePercent, avgDailyEnergy, and peakHour (Protected route)."
+					},
+					"response": []
+				},
+				{
+					"name": "Get Consumption Trends - Weekly",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{auth_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/consumption/trends?type=weekly",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"consumption",
+								"trends"
+							],
+							"query": [
+								{
+									"key": "type",
+									"value": "weekly",
+									"description": "Type: daily, weekly, or monthly"
+								},
+								{
+									"key": "roomId",
+									"value": "{{room_id}}",
+									"description": "Optional: Filter by room ID",
+									"disabled": true
+								}
+							]
+						},
+						"description": "Get weekly consumption trends for the last 8 weeks. Returns weeklyBreakdown with weekNumber, startDate, endDate, energy, avgDailyEnergy, maxPower, cost for each week. Summary includes currentWeekEnergy, previousWeekEnergy, weekChangePercent, avgWeeklyEnergy, and totalEnergy (Protected route)."
+					},
+					"response": []
+				},
+				{
+					"name": "Get Consumption Trends - Monthly",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{auth_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/consumption/trends?type=monthly",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"consumption",
+								"trends"
+							],
+							"query": [
+								{
+									"key": "type",
+									"value": "monthly",
+									"description": "Type: daily, weekly, or monthly"
+								},
+								{
+									"key": "roomId",
+									"value": "{{room_id}}",
+									"description": "Optional: Filter by room ID",
+									"disabled": true
+								}
+							]
+						},
+						"description": "Get monthly consumption trends for the last 12 months. Returns monthlyBreakdown with month, year, energy, avgDailyEnergy, maxPower, cost, budgetUsedPercent, overBudget for each month. Summary includes currentMonthEnergy, previousMonthEnergy, monthChangePercent, avgMonthlyEnergy, totalYearEnergy, yearOverYearChangePercent, and overBudgetMonths count (Protected route)."
+					},
+					"response": []
 				}
 			],
 			"description": "Consumption analytics and statistics endpoints"
@@ -643,6 +814,351 @@
 				}
 			],
 			"description": "Room management endpoints - CRUD operations"
+		},
+		{
+			"name": "Appliance Management",
+			"item": [
+				{
+					"name": "Get All Appliances",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{auth_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/appliances?roomId={{room_id}}",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"appliances"
+							],
+							"query": [
+								{
+									"key": "roomId",
+									"value": "{{room_id}}",
+									"description": "Optional: Filter by room ID",
+									"disabled": true
+								},
+								{
+									"key": "type",
+									"value": "Air Conditioner",
+									"description": "Optional: Filter by appliance type",
+									"disabled": true
+								},
+								{
+									"key": "isActive",
+									"value": "true",
+									"description": "Optional: Filter by active status",
+									"disabled": true
+								}
+							]
+						},
+						"description": "Get all appliances for the current user with optional filters (roomId, type, isActive). Returns appliances with consumption estimates and summary statistics (Protected route)."
+					},
+					"response": []
+				},
+				{
+					"name": "Get Single Appliance",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{auth_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/appliances/{{appliance_id}}",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"appliances",
+								"{{appliance_id}}"
+							]
+						},
+						"description": "Get details of a specific appliance by ID including power signature and consumption estimates (Protected route)."
+					},
+					"response": []
+				},
+				{
+					"name": "Create Appliance",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 201) {",
+									"    const response = pm.response.json();",
+									"    pm.environment.set('appliance_id', response.data._id);",
+									"    console.log('✅ Appliance created. ID saved:', response.data._id);",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{auth_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"roomId\": \"{{room_id}}\",\n  \"name\": \"Samsung Air Conditioner\",\n  \"type\": \"Air Conditioner\",\n  \"powerRating\": 1500,\n  \"estimatedWattage\": 1500,\n  \"usageHoursPerDay\": 8\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/appliances",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"appliances"
+							]
+						},
+						"description": "Create a new appliance. Required fields: roomId, name, type, powerRating, estimatedWattage. Optional: usageHoursPerDay, icon. Power signature is auto-generated. Color is set to default #6366f1 (Protected route)."
+					},
+					"response": []
+				},
+				{
+					"name": "Update Appliance",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{auth_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"usageHoursPerDay\": 10,\n  \"powerRating\": 1600,\n  \"isActive\": true\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/appliances/{{appliance_id}}",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"appliances",
+								"{{appliance_id}}"
+							]
+						},
+						"description": "Update appliance details. Can update: name, type, powerRating, estimatedWattage, usageHoursPerDay, isActive, icon, color, roomId (Protected route)."
+					},
+					"response": []
+				},
+				{
+					"name": "Delete Appliance",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{auth_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "DELETE",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/appliances/{{appliance_id}}",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"appliances",
+								"{{appliance_id}}"
+							]
+						},
+						"description": "Delete an appliance by ID (Protected route)."
+					},
+					"response": []
+				},
+				{
+					"name": "Get Appliances by Room",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{auth_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/appliances/room/{{room_id}}",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"appliances",
+								"room",
+								"{{room_id}}"
+							]
+						},
+						"description": "Get all appliances for a specific room with detailed statistics including total wattage, estimated consumption, and threshold usage percentage (Protected route)."
+					},
+					"response": []
+				},
+				{
+					"name": "Get Appliance Types",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{auth_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/appliances/types",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"appliances",
+								"types"
+							]
+						},
+						"description": "Get list of all supported appliance types with suggested average wattages and icons. Useful for dropdown/select menus in UI (Protected route)."
+					},
+					"response": []
+				},
+				{
+					"name": "Bulk Create Appliances",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{auth_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"roomId\": \"{{room_id}}\",\n  \"appliances\": [\n    {\n      \"name\": \"LED Light 1\",\n      \"type\": \"Lights\",\n      \"estimatedWattage\": 15,\n      \"usageHoursPerDay\": 6\n    },\n    {\n      \"name\": \"LED Light 2\",\n      \"type\": \"Lights\",\n      \"estimatedWattage\": 15,\n      \"usageHoursPerDay\": 6\n    },\n    {\n      \"name\": \"Ceiling Fan\",\n      \"type\": \"Fan\",\n      \"brand\": \"Crompton\",\n      \"estimatedWattage\": 75,\n      \"usageHoursPerDay\": 12\n    }\n  ]\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/appliances/bulk",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"appliances",
+								"bulk"
+							]
+						},
+						"description": "Create multiple appliances for a room in a single request. Useful for initial room setup (Protected route)."
+					},
+					"response": []
+				},
+				{
+					"name": "Create Room with Appliances",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{auth_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"Kitchen\",\n  \"icon\": \"kitchen\",\n  \"threshold\": 3000,\n  \"appliances\": [\n    {\n      \"name\": \"Refrigerator\",\n      \"type\": \"Refrigerator\",\n      \"brand\": \"Samsung\",\n      \"estimatedWattage\": 150,\n      \"usageHoursPerDay\": 24\n    },\n    {\n      \"name\": \"Microwave\",\n      \"type\": \"Microwave\",\n      \"brand\": \"LG\",\n      \"estimatedWattage\": 1200,\n      \"usageHoursPerDay\": 0.5\n    },\n    {\n      \"name\": \"LED Lights\",\n      \"type\": \"Lights\",\n      \"estimatedWattage\": 60,\n      \"usageHoursPerDay\": 8\n    }\n  ]\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/room",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"room"
+							]
+						},
+						"description": "Create a room and add appliances in one request. Returns both the created room and appliances array (Protected route)."
+					},
+					"response": []
+				}
+			],
+			"description": "Appliance management - CRUD operations, room integration, and bulk operations"
 		},
 		{
 			"name": "Alerts & Notifications",

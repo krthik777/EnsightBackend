@@ -74,6 +74,7 @@ const alertRoutes = require('./routes/alertRoutes');
 const nilmRoutes = require('./routes/nilmRoutes');
 const forecastRoutes = require('./routes/forecastRoutes');
 const settingsRoutes = require('./routes/settingsRoutes');
+const applianceRoutes = require('./routes/applianceRoutes');
 
 // Mount routes
 app.use('/api/user', authRoutes);
@@ -84,6 +85,7 @@ app.use('/api/alerts', alertRoutes);
 app.use('/api/nilm', nilmRoutes);
 app.use('/api/forecast', forecastRoutes);
 app.use('/api/settings', settingsRoutes);
+app.use('/api/appliances', applianceRoutes);
 
 // Root endpoint
 app.get('/', (req, res) => {
@@ -111,9 +113,19 @@ app.get('/', (req, res) => {
       rooms: {
         getAll: 'GET /api/room',
         getOne: 'GET /api/room/:id',
-        create: 'POST /api/room',
+        create: 'POST /api/room (with appliances support)',
         update: 'PUT /api/room/:id',
         delete: 'DELETE /api/room/:id'
+      },
+      appliances: {
+        getAll: 'GET /api/appliances',
+        getOne: 'GET /api/appliances/:id',
+        create: 'POST /api/appliances',
+        update: 'PUT /api/appliances/:id',
+        delete: 'DELETE /api/appliances/:id',
+        byRoom: 'GET /api/appliances/room/:roomId',
+        types: 'GET /api/appliances/types',
+        bulkCreate: 'POST /api/appliances/bulk'
       },
       alerts: {
         getAll: 'GET /api/alerts',

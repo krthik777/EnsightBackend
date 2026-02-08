@@ -21,19 +21,107 @@ const simpleLinearRegression = (values) => {
   return { slope, intercept };
 };
 
-// @desc    Forecast monthly energy usage
+// @desc    Forecast monthly energy usage (using ML Backend)
 // @route   GET /api/forecast/monthly
 // @access  Private
 exports.forecastMonthly = async (req, res) => {
   try {
+    const { roomId, mainsSequence } = req.query;
+
     // Get current month's data
     const now = new Date();
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
     const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0);
-    
+    const currentDay = now.getDate();
+    const daysInMonth = monthEnd.getDate();
+    const daysElapsed = currentDay;
+
+    console.log('📈 Monthly Forecast Request:'.cyan);
+    console.log(`   User: ${req.user._id}`.gray);
+    console.log(`   Room: ${roomId || 'All rooms'}`.gray);
+    console.log(`   Days Elapsed: ${daysElapsed}/${daysInMonth}`.gray);
+
+    // Try to use ML Backend first
+    try {
+      const mlService = require('../services/mlBackendService');
+
+      // If no sequence provided, fetch from database for the specified room
+      let sequence = mainsSequence;
+      if (!sequence && roomId) {
+        sequence = await mlService.getMainsSequence(req.user._id, roomId, 50);
+        console.log(`   Fetched ${sequence.length} readings from database`.gray);
+      } else if (!sequence) {
+        // Fetch latest readings across all rooms
+        const readings = await PowerReading.find({
+          userId: req.user._id
+        })
+          .sort({ timestamp: -1 })
+          .limit(50)
+          .lean();
+        sequence = readings.reverse().map(r => r.power);
+      }
+
+      // If we have a roomId, get ML prediction
+      if (roomId) {
+        const mlResponse = await mlService.predictMonthlyConsumption({
+          mainsSequence: sequence,
+          daysElapsed,
+          roomId,
+          userId: req.user._id.toString()
+        });
+
+        // Extract data from ML response
+        const { monthlyPrediction, billingCycle, currentUsage } = mlResponse.data;
+
+        // Get budget settings for comparison
+        const settings = await Settings.findOne({ userId: req.user._id });
+        const monthlyBudget = settings ? settings.budget.monthly : 400;
+
+        // Calculate additional metrics
+        const willExceedBudget = monthlyPrediction.estimatedMonthlyConsumption > monthlyBudget;
+        const exceedAmount = willExceedBudget 
+          ? monthlyPrediction.estimatedMonthlyConsumption - monthlyBudget 
+          : 0;
+
+        return res.status(200).json({
+          success: true,
+          data: {
+            source: 'ml_backend',
+            currentMonth: {
+              daysElapsed: billingCycle.daysElapsed,
+              daysRemaining: billingCycle.daysRemaining,
+              currentUsage: currentUsage.totalPower,
+              activeAppliances: currentUsage.activeAppliances,
+              applianceCount: currentUsage.applianceCount
+            },
+            forecast: {
+              predictedTotal: monthlyPrediction.estimatedMonthlyConsumption,
+              predictedCost: monthlyPrediction.estimatedMonthlyCost,
+              budget: monthlyBudget,
+              willExceedBudget,
+              exceedAmount: exceedAmount.toFixed(2),
+              usagePercent: ((monthlyPrediction.estimatedMonthlyConsumption / monthlyBudget) * 100).toFixed(1),
+              confidence: billingCycle.predictionConfidence,
+              applianceBreakdown: monthlyPrediction.applianceBreakdown
+            },
+            recommendation: willExceedBudget 
+              ? `Reduce daily consumption by ${(exceedAmount / billingCycle.daysRemaining).toFixed(2)} kWh to stay within budget`
+              : 'You are on track to stay within your monthly budget',
+            timestamp: mlResponse.data.timestamp
+          }
+        });
+      }
+    } catch (mlError) {
+      console.warn('⚠️  ML Backend unavailable, using fallback algorithm'.yellow);
+      console.warn(`   Error: ${mlError.message}`.gray);
+    }
+
+    // Fallback to local algorithm
+    console.log('Using local forecasting algorithm...'.gray);
     const readings = await PowerReading.find({
       userId: req.user._id,
-      timestamp: { $gte: monthStart, $lte: now }
+      timestamp: { $gte: monthStart, $lte: now },
+      ...(roomId && { roomId })
     }).sort({ timestamp: 1 });
 
     // Group by day
@@ -47,11 +135,9 @@ exports.forecastMonthly = async (req, res) => {
     });
 
     const dailyValues = Object.values(dailyConsumption);
-    const currentDay = now.getDate();
-    const daysInMonth = monthEnd.getDate();
     
     // Calculate average daily consumption
-    const avgDailyConsumption = dailyValues.reduce((a, b) => a + b, 0) / dailyValues.length;
+    const avgDailyConsumption = dailyValues.reduce((a, b) => a + b, 0) / dailyValues.length || 0;
     
     // Forecast remaining days
     const { slope, intercept } = simpleLinearRegression(dailyValues);
@@ -74,6 +160,7 @@ exports.forecastMonthly = async (req, res) => {
     res.status(200).json({
       success: true,
       data: {
+        source: 'fallback_algorithm',
         currentMonth: {
           daysElapsed: currentDay,
           daysRemaining: daysInMonth - currentDay,
@@ -94,6 +181,7 @@ exports.forecastMonthly = async (req, res) => {
       }
     });
   } catch (error) {
+    console.error('❌ Error in forecastMonthly:'.red, error.message);
     res.status(500).json({
       success: false,
       message: error.message

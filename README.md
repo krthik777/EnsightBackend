@@ -1,13 +1,14 @@
 # Energy Dashboard Backend API
 
-A comprehensive Node.js backend for an IoT-based energy monitoring system with MongoDB database.
+A comprehensive Node.js backend for an IoT-based energy monitoring system with MongoDB database and ML-powered predictions.
 
 ## Features
 
 - ⚡ **Real-time Power Monitoring** - Receive and store data from ESP32 IoT devices
 - 📊 **Consumption Analytics** - Room-level and overall household energy tracking
 - 🔮 **Predictive Forecasting** - Daily and monthly energy usage predictions
-- 🤖 **NILM (Appliance Detection)** - Identify running appliances from power signatures
+- 🤖 **NILM (Appliance Detection)** - ML-powered appliance identification from power signatures
+- 🧠 **ML Integration** - Integration with Flask-based ML backend for advanced predictions
 - 🚨 **Smart Alerts** - Budget warnings, high usage detection, and anomalies
 - 👤 **User Management** - JWT-based authentication and authorization
 - ⚙️ **Settings Management** - Customizable budgets, notifications, and preferences
@@ -19,6 +20,7 @@ A comprehensive Node.js backend for an IoT-based energy monitoring system with M
 - **Database:** MongoDB with Mongoose ODM
 - **Authentication:** JWT (JSON Web Tokens)
 - **Security:** bcryptjs for password hashing
+- **ML Integration:** Axios for HTTP communication with Flask ML backend
 
 ## Installation
 
@@ -39,11 +41,16 @@ A comprehensive Node.js backend for an IoT-based energy monitoring system with M
 4. **Configure environment variables**
    - Edit `.env` file:
    ```env
-   PORT=5000
+   PORT=3000
    MONGODB_URI=mongodb://localhost:27017/energy_dashboard
    JWT_SECRET=your_super_secret_jwt_key_change_this_in_production
    JWT_EXPIRE=7d
+   ML_BACKEND_URL=http://localhost:5000
    ```
+   
+   **Important:** Node.js backend runs on port **3000**, Flask ML backend on port **5000**.
+   
+   See [ML_BACKEND_INTEGRATION.md](./ML_BACKEND_INTEGRATION.md) for ML backend setup.
 
 5. **Start the server**
    ```bash
@@ -78,6 +85,8 @@ A comprehensive Node.js backend for an IoT-based energy monitoring system with M
 | GET | `/api/consumption/room` | Get room-level consumption | Yes |
 | GET | `/api/consumption/overall` | Get total household consumption | Yes |
 | GET | `/api/consumption/stats` | Get detailed statistics | Yes |
+| GET | `/api/consumption/monthly` | Get specific calendar month consumption | Yes |
+| GET | `/api/consumption/trends` | Get daily/weekly/monthly trends | Yes |
 
 ### Room Management
 
@@ -182,6 +191,31 @@ Content-Type: application/json
 ### Get Overall Consumption
 ```bash
 GET /api/consumption/overall?period=today
+Authorization: Bearer <your_jwt_token>
+```
+
+### Get Monthly Consumption (Specific Month)
+```bash
+GET /api/consumption/monthly?year=2025&month=10
+Authorization: Bearer <your_jwt_token>
+```
+
+### Get Consumption Trends
+```bash
+# Daily trends (last 7 days + hourly breakdown)
+GET /api/consumption/trends?type=daily
+Authorization: Bearer <your_jwt_token>
+
+# Weekly trends (last 8 weeks)
+GET /api/consumption/trends?type=weekly
+Authorization: Bearer <your_jwt_token>
+
+# Monthly trends (last 12 months)
+GET /api/consumption/trends?type=monthly
+Authorization: Bearer <your_jwt_token>
+
+# Room-specific trends
+GET /api/consumption/trends?type=weekly&roomId=671234567890abcdef123457
 Authorization: Bearer <your_jwt_token>
 ```
 

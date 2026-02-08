@@ -46,12 +46,12 @@ const detectAppliances = (power) => {
   return appliances;
 };
 
-// @desc    Predict appliances from recent readings
+// @desc    Predict appliances from recent readings (using ML Backend)
 // @route   POST /api/nilm/predict
 // @access  Private
 exports.predictAppliances = async (req, res) => {
   try {
-    const { roomId } = req.body;
+    const { roomId, mainsSequence } = req.body;
 
     if (!roomId) {
       return res.status(400).json({
@@ -60,38 +60,105 @@ exports.predictAppliances = async (req, res) => {
       });
     }
 
-    // Get recent readings (last 5 minutes)
-    const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
-    const readings = await PowerReading.find({
-      userId: req.user._id,
-      roomId,
-      timestamp: { $gte: fiveMinutesAgo }
-    }).sort({ timestamp: -1 });
+    console.log('🔮 NILM Prediction Request:'.cyan);
+    console.log(`   User: ${req.user._id}`.gray);
+    console.log(`   Room: ${roomId}`.gray);
+    console.log(`   Mains Sequence Provided: ${mainsSequence ? 'Yes' : 'No'}`.gray);
 
-    if (readings.length === 0) {
-      return res.status(404).json({
-        success: false,
-        message: 'No recent readings found'
-      });
+    let sequence = mainsSequence;
+
+    // If no sequence provided, fetch from database
+    if (!sequence) {
+      const mlService = require('../services/mlBackendService');
+      sequence = await mlService.getMainsSequence(req.user._id, roomId, 50);
+      console.log(`   Fetched ${sequence.length} readings from database`.gray);
     }
 
-    // Use latest reading for prediction
-    const latestReading = readings[0];
-    const detectedAppliances = detectAppliances(latestReading.power);
+    // Try to use ML Backend first
+    try {
+      const mlService = require('../services/mlBackendService');
+      const mlResponse = await mlService.predictAppliances({
+        mainsSequence: sequence,
+        roomId,
+        userId: req.user._id.toString()
+      });
 
-    // Save detection
-    const detection = await ApplianceDetection.create({
-      userId: req.user._id,
-      roomId,
-      appliances: detectedAppliances,
-      totalPower: latestReading.power
-    });
+      // Transform ML response to our format
+      const transformedData = mlService.transformMLPrediction(
+        mlResponse,
+        req.user._id,
+        roomId
+      );
 
-    res.status(200).json({
-      success: true,
-      data: detection
-    });
+      // Save detection to database
+      const detection = await ApplianceDetection.create({
+        userId: req.user._id,
+        roomId,
+        appliances: transformedData.appliances,
+        totalPower: transformedData.totalPower,
+        metadata: {
+          source: 'ml_backend',
+          confidence: transformedData.confidence,
+          activeAppliances: transformedData.activeAppliances,
+          ...transformedData.metadata
+        }
+      });
+
+      res.status(200).json({
+        success: true,
+        data: {
+          prediction: {
+            appliances: mlResponse.data.prediction.appliances,
+            totalPower: mlResponse.data.prediction.totalPower,
+            confidence: mlResponse.data.prediction.confidence,
+            activeAppliances: mlResponse.data.prediction.activeAppliances,
+            timestamp: mlResponse.data.prediction.timestamp
+          },
+          summary: mlResponse.data.summary,
+          detectionId: detection._id,
+          source: 'ml_backend'
+        }
+      });
+    } catch (mlError) {
+      console.warn('⚠️  ML Backend unavailable, using fallback algorithm'.yellow);
+      console.warn(`   Error: ${mlError.message}`.gray);
+
+      // Fallback to simple local algorithm
+      const latestReading = await PowerReading.findOne({
+        userId: req.user._id,
+        roomId
+      }).sort({ timestamp: -1 });
+
+      if (!latestReading) {
+        return res.status(404).json({
+          success: false,
+          message: 'No readings found for this room'
+        });
+      }
+
+      const detectedAppliances = detectAppliances(latestReading.power);
+
+      // Save detection
+      const detection = await ApplianceDetection.create({
+        userId: req.user._id,
+        roomId,
+        appliances: detectedAppliances,
+        totalPower: latestReading.power,
+        metadata: {
+          source: 'fallback_algorithm',
+          mlBackendError: mlError.message
+        }
+      });
+
+      res.status(200).json({
+        success: true,
+        data: detection,
+        warning: 'Using fallback algorithm. ML backend unavailable.',
+        source: 'fallback'
+      });
+    }
   } catch (error) {
+    console.error('❌ Error in predictAppliances:'.red, error.message);
     res.status(500).json({
       success: false,
       message: error.message
