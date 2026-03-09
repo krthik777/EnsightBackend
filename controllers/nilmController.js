@@ -1,11 +1,11 @@
 const ApplianceDetection = require('../models/ApplianceDetection');
 const PowerReading = require('../models/PowerReading');
+const mlService = require('../services/mlBackendService');
 
-// Simple NILM algorithm - In production, use ML models
-const detectAppliances = (power) => {
-  const appliances = [];
-  
-  // Simple power signature matching (replace with ML model in production)
+// ─────────────────────────────────────────────────────────────────────────────
+// Simple local fallback NILM (used only when ML backend is down)
+// ─────────────────────────────────────────────────────────────────────────────
+const detectAppliances_local = (power) => {
   const signatures = [
     { name: 'Air Conditioner', min: 1000, max: 2000, confidence: 85 },
     { name: 'Refrigerator', min: 100, max: 200, confidence: 80 },
@@ -18,171 +18,196 @@ const detectAppliances = (power) => {
     { name: 'Electric Kettle', min: 1200, max: 2000, confidence: 80 }
   ];
 
-  let remainingPower = power;
-  
+  const appliances = [];
+  let remaining = power;
+
   signatures.forEach(sig => {
-    if (remainingPower >= sig.min) {
-      const possibleCount = Math.floor(remainingPower / sig.min);
-      if (possibleCount > 0 && remainingPower >= sig.min && remainingPower <= sig.max * possibleCount) {
+    if (remaining >= sig.min) {
+      const count = Math.floor(remaining / sig.min);
+      if (count > 0 && remaining <= sig.max * count) {
         appliances.push({
           name: sig.name,
           confidence: sig.confidence,
-          powerConsumption: Math.min(sig.max, remainingPower)
+          powerConsumption: Math.min(sig.max, remaining)
         });
-        remainingPower -= sig.max;
+        remaining -= sig.max;
       }
     }
   });
 
-  // If there's remaining power, add as "Other Appliances"
-  if (remainingPower > 10) {
-    appliances.push({
-      name: 'Other Appliances',
-      confidence: 50,
-      powerConsumption: remainingPower
-    });
+  if (remaining > 10) {
+    appliances.push({ name: 'Other Appliances', confidence: 50, powerConsumption: remaining });
   }
-
   return appliances;
 };
 
-// @desc    Predict appliances from recent readings (using ML Backend)
-// @route   POST /api/nilm/predict
-// @access  Private
+// ─────────────────────────────────────────────────────────────────────────────
+// @desc  Detect which appliances are currently ON
+// @route POST /api/nilm/predict
+// @access Private
+// ─────────────────────────────────────────────────────────────────────────────
 exports.predictAppliances = async (req, res) => {
   try {
-    const { roomId, mainsSequence } = req.body;
+    const { roomId } = req.body;
 
     if (!roomId) {
-      return res.status(400).json({
-        success: false,
-        message: 'Room ID is required'
-      });
+      return res.status(400).json({ success: false, message: 'roomId is required' });
     }
 
-    console.log('🔮 NILM Prediction Request:'.cyan);
-    console.log(`   User: ${req.user._id}`.gray);
+    const userId = req.user._id.toString();
+
+    console.log('🔮 NILM Predict:'.cyan);
+    console.log(`   User: ${userId}`.gray);
     console.log(`   Room: ${roomId}`.gray);
-    console.log(`   Mains Sequence Provided: ${mainsSequence ? 'Yes' : 'No'}`.gray);
 
-    let sequence = mainsSequence;
-
-    // If no sequence provided, fetch from database
-    if (!sequence) {
-      const mlService = require('../services/mlBackendService');
-      sequence = await mlService.getMainsSequence(req.user._id, roomId, 50);
-      console.log(`   Fetched ${sequence.length} readings from database`.gray);
-    }
-
-    // Try to use ML Backend first
+    // ── Try ML backend ──────────────────────────────────────────────────────
     try {
-      const mlService = require('../services/mlBackendService');
-      const mlResponse = await mlService.predictAppliances({
-        mainsSequence: sequence,
-        roomId,
-        userId: req.user._id.toString()
-      });
+      // 1. Detect active appliances
+      const detectRes = await mlService.detectAppliances({ userId, roomId });
 
-      // Transform ML response to our format
-      const transformedData = mlService.transformMLPrediction(
-        mlResponse,
-        req.user._id,
-        roomId
-      );
+      // 2. Get per-appliance power breakdown
+      const powerRes = await mlService.predictAppliancePower({ userId, roomId });
 
-      // Save detection to database
+      if (!detectRes.success) {
+        throw new Error(detectRes.error || 'ML detect-appliances returned success=false');
+      }
+
+      // Build appliance array for DB storage
+      // active_appliances = ['air_conditioner', 'television', ...]
+      // confidence        = { air_conditioner: 0.98, ... }
+      // power             = { air_conditioner: 1667.91, ... }
+      const appliances = (detectRes.active_appliances || []).map(key => ({
+        name: key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
+        confidence: Math.round((detectRes.confidence?.[key] ?? 0.75) * 100),
+        powerConsumption: powerRes.success ? (powerRes.appliances?.[key] ?? 0) : 0
+      }));
+
+      const totalPower = powerRes.success
+        ? Object.values(powerRes.appliances || {}).reduce((s, v) => s + v, 0)
+        : 0;
+
+      // Save to appliancedetections
       const detection = await ApplianceDetection.create({
         userId: req.user._id,
         roomId,
-        appliances: transformedData.appliances,
-        totalPower: transformedData.totalPower,
-        metadata: {
-          source: 'ml_backend',
-          confidence: transformedData.confidence,
-          activeAppliances: transformedData.activeAppliances,
-          ...transformedData.metadata
-        }
+        appliances,
+        totalPower
       });
 
-      res.status(200).json({
+      return res.status(200).json({
         success: true,
         data: {
-          prediction: {
-            appliances: mlResponse.data.prediction.appliances,
-            totalPower: mlResponse.data.prediction.totalPower,
-            confidence: mlResponse.data.prediction.confidence,
-            activeAppliances: mlResponse.data.prediction.activeAppliances,
-            timestamp: mlResponse.data.prediction.timestamp
-          },
-          summary: mlResponse.data.summary,
-          detectionId: detection._id,
-          source: 'ml_backend'
+          source: 'ml_backend',
+          active_appliances: detectRes.active_appliances,
+          confidence: detectRes.confidence,
+          appliance_power: powerRes.success ? powerRes.appliances : {},
+          totalPower,
+          detectionId: detection._id
         }
       });
+
     } catch (mlError) {
-      console.warn('⚠️  ML Backend unavailable, using fallback algorithm'.yellow);
-      console.warn(`   Error: ${mlError.message}`.gray);
+      console.warn('⚠️  ML Backend unavailable, using fallback NILM'.yellow);
+      console.warn(`   ${mlError.message}`.gray);
 
-      // Fallback to simple local algorithm
-      const latestReading = await PowerReading.findOne({
-        userId: req.user._id,
-        roomId
-      }).sort({ timestamp: -1 });
+      // ── Fallback ───────────────────────────────────────────────────────────
+      const latest = await PowerReading.findOne({ userId: req.user._id, roomId })
+        .sort({ timestamp: -1 });
 
-      if (!latestReading) {
-        return res.status(404).json({
-          success: false,
-          message: 'No readings found for this room'
-        });
+      if (!latest) {
+        return res.status(404).json({ success: false, message: 'No power readings found for this room' });
       }
 
-      const detectedAppliances = detectAppliances(latestReading.power);
+      const detectedAppliances = detectAppliances_local(latest.power);
 
-      // Save detection
       const detection = await ApplianceDetection.create({
         userId: req.user._id,
         roomId,
         appliances: detectedAppliances,
-        totalPower: latestReading.power,
-        metadata: {
-          source: 'fallback_algorithm',
-          mlBackendError: mlError.message
-        }
+        totalPower: latest.power
       });
 
-      res.status(200).json({
+      return res.status(200).json({
         success: true,
-        data: detection,
-        warning: 'Using fallback algorithm. ML backend unavailable.',
-        source: 'fallback'
+        warning: 'Using fallback algorithm — ML backend unavailable.',
+        data: {
+          source: 'fallback',
+          appliances: detectedAppliances,
+          totalPower: latest.power,
+          detectionId: detection._id
+        }
       });
     }
   } catch (error) {
-    console.error('❌ Error in predictAppliances:'.red, error.message);
-    res.status(500).json({
-      success: false,
-      message: error.message
-    });
+    console.error('❌ predictAppliances error:'.red, error.message);
+    res.status(500).json({ success: false, message: error.message });
   }
 };
 
-// @desc    Get historical appliance usage
-// @route   GET /api/nilm/history
-// @access  Private
+// ─────────────────────────────────────────────────────────────────────────────
+// @desc  Detect power anomalies / faulty appliances
+// @route POST /api/nilm/anomaly
+// @access Private
+// ─────────────────────────────────────────────────────────────────────────────
+exports.detectAnomaly = async (req, res) => {
+  try {
+    const { roomId } = req.body;
+
+    if (!roomId) {
+      return res.status(400).json({ success: false, message: 'roomId is required' });
+    }
+
+    const userId = req.user._id.toString();
+
+    console.log('⚠️  Anomaly Detection:'.cyan);
+    console.log(`   User: ${userId}  Room: ${roomId}`.gray);
+
+    try {
+      const result = await mlService.detectAnomaly({ userId, roomId });
+
+      if (!result.success) {
+        throw new Error(result.error || 'detect-anomaly returned success=false');
+      }
+
+      return res.status(200).json({
+        success: true,
+        data: {
+          source: 'ml_backend',
+          possible_faulty_appliance: result.possible_faulty_appliance,
+          room_threshold_used: result.room_threshold_used,
+          details: result.details || null
+        }
+      });
+
+    } catch (mlError) {
+      console.warn('⚠️  ML unavailable for anomaly detection'.yellow);
+      return res.status(503).json({
+        success: false,
+        message: 'ML Backend unavailable for anomaly detection.',
+        error: mlError.message
+      });
+    }
+  } catch (error) {
+    console.error('❌ detectAnomaly error:'.red, error.message);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// @desc  Historical appliance detections
+// @route GET /api/nilm/history
+// @access Private
+// ─────────────────────────────────────────────────────────────────────────────
 exports.getApplianceHistory = async (req, res) => {
   try {
     const { roomId, startDate, endDate, limit = 50 } = req.query;
 
     let query = { userId: req.user._id };
-    
-    if (roomId) {
-      query.roomId = roomId;
-    }
-
+    if (roomId) query.roomId = roomId;
     if (startDate || endDate) {
       query.timestamp = {};
       if (startDate) query.timestamp.$gte = new Date(startDate);
-      if (endDate) query.timestamp.$lte = new Date(endDate);
+      if (endDate)   query.timestamp.$lte = new Date(endDate);
     }
 
     const history = await ApplianceDetection.find(query)
@@ -190,78 +215,53 @@ exports.getApplianceHistory = async (req, res) => {
       .limit(parseInt(limit))
       .populate('roomId', 'name icon');
 
-    // Aggregate appliance usage
-    const applianceStats = {};
-    history.forEach(detection => {
-      detection.appliances.forEach(appliance => {
-        if (!applianceStats[appliance.name]) {
-          applianceStats[appliance.name] = {
-            name: appliance.name,
-            detectionCount: 0,
-            totalPower: 0,
-            avgPower: 0,
-            avgConfidence: 0
-          };
+    // Aggregate stats per appliance
+    const statsMap = {};
+    history.forEach(det => {
+      det.appliances.forEach(app => {
+        if (!statsMap[app.name]) {
+          statsMap[app.name] = { name: app.name, detectionCount: 0, totalPower: 0, totalConfidence: 0 };
         }
-        applianceStats[appliance.name].detectionCount += 1;
-        applianceStats[appliance.name].totalPower += appliance.powerConsumption;
-        applianceStats[appliance.name].avgConfidence += appliance.confidence;
+        statsMap[app.name].detectionCount++;
+        statsMap[app.name].totalPower      += app.powerConsumption;
+        statsMap[app.name].totalConfidence += app.confidence;
       });
     });
 
-    // Calculate averages
-    Object.keys(applianceStats).forEach(key => {
-      const stat = applianceStats[key];
-      stat.avgPower = stat.totalPower / stat.detectionCount;
-      stat.avgConfidence = stat.avgConfidence / stat.detectionCount;
-    });
+    const statistics = Object.values(statsMap).map(s => ({
+      name: s.name,
+      detectionCount: s.detectionCount,
+      avgPower: (s.totalPower      / s.detectionCount).toFixed(2),
+      avgConfidence: (s.totalConfidence / s.detectionCount).toFixed(1)
+    }));
 
-    res.status(200).json({
-      success: true,
-      count: history.length,
-      data: {
-        history,
-        statistics: Object.values(applianceStats)
-      }
-    });
+    res.status(200).json({ success: true, count: history.length, data: { history, statistics } });
   } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: error.message
-    });
+    res.status(500).json({ success: false, message: error.message });
   }
 };
 
-// @desc    Get appliance breakdown for current usage
-// @route   GET /api/nilm/breakdown
-// @access  Private
+// ─────────────────────────────────────────────────────────────────────────────
+// @desc  Latest appliance breakdown
+// @route GET /api/nilm/breakdown
+// @access Private
+// ─────────────────────────────────────────────────────────────────────────────
 exports.getApplianceBreakdown = async (req, res) => {
   try {
     const { roomId } = req.query;
-
-    // Get latest detection
     let query = { userId: req.user._id };
     if (roomId) query.roomId = roomId;
 
-    const latestDetection = await ApplianceDetection.findOne(query)
+    const latest = await ApplianceDetection.findOne(query)
       .sort({ timestamp: -1 })
       .populate('roomId', 'name icon');
 
-    if (!latestDetection) {
-      return res.status(404).json({
-        success: false,
-        message: 'No appliance detection data found'
-      });
+    if (!latest) {
+      return res.status(404).json({ success: false, message: 'No appliance detection data found' });
     }
 
-    res.status(200).json({
-      success: true,
-      data: latestDetection
-    });
+    res.status(200).json({ success: true, data: latest });
   } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: error.message
-    });
+    res.status(500).json({ success: false, message: error.message });
   }
 };
