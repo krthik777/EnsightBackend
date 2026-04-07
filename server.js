@@ -75,6 +75,7 @@ const nilmRoutes = require('./routes/nilmRoutes');
 const forecastRoutes = require('./routes/forecastRoutes');
 const settingsRoutes = require('./routes/settingsRoutes');
 const applianceRoutes = require('./routes/applianceRoutes');
+const mlRoutes = require('./routes/mlRoutes');
 
 // Mount routes
 app.use('/api/user', authRoutes);
@@ -86,6 +87,7 @@ app.use('/api/nilm', nilmRoutes);
 app.use('/api/forecast', forecastRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/appliances', applianceRoutes);
+app.use('/api/ml', mlRoutes);
 
 // Root endpoint
 app.get('/', (req, res) => {
@@ -149,6 +151,13 @@ app.get('/', (req, res) => {
         update: 'PUT /api/settings',
         budget: 'GET/PUT /api/settings/budget',
         notifications: 'GET/PUT /api/settings/notifications'
+      },
+      ml: {
+        health:     'GET /api/ml/health',
+        dbStatus:   'GET /api/ml/db-status',
+        debugRoom:  'GET /api/ml/debug-room?roomId=<id>',
+        energyToday:'GET /api/ml/energy/today?roomId=<id>',
+        energyDaily:'GET /api/ml/energy/daily?roomId=<id>&date=YYYY-MM-DD'
       }
     }
   });

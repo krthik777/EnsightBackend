@@ -22,10 +22,9 @@ const simpleLinearRegression = (values) => {
 // ─────────────────────────────────────────────────────────────────────────────
 exports.forecastMonthly = async (req, res) => {
   try {
-    const { roomId } = req.query;
+    const { roomId, lookback_days } = req.query;
     const userId = req.user._id.toString();
 
-    // Date info (still useful for fallback + logging)
     const now         = new Date();
     const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
     const currentDay  = now.getDate();
@@ -38,35 +37,57 @@ exports.forecastMonthly = async (req, res) => {
     // ── Try ML backend ────────────────────────────────────────────────────
     if (roomId) {
       try {
-        // /predict-month-end is the new endpoint for end-of-month forecasting
-        const mlRes = await mlService.predictMonthEnd({ userId, roomId });
+        // ML uses EWMA from last 2-7 days (more accurate than simple linear)
+        const mlRes = await mlService.predictMonthEnd({
+          userId,
+          roomId,
+          lookback_days: lookback_days ? parseInt(lookback_days) : 7
+        });
 
         if (!mlRes.success) {
           throw new Error(mlRes.error || 'predict-month-end returned success=false');
         }
+
+        // ML returns predicted_cost as a full KSEB bill object
+        const predictedCost = mlRes.predicted_cost || {};
 
         return res.status(200).json({
           success: true,
           data: {
             source: 'ml_backend',
             currentMonth: {
-              daysElapsed:   mlRes.days_elapsed,
-              daysRemaining: mlRes.days_remaining,
-              avgDailyKwh:   mlRes.avg_daily_kwh
+              daysElapsed:         mlRes.days_elapsed,
+              daysRemaining:       mlRes.days_remaining,
+              actualKwhSoFar:      mlRes.actual_kwh_so_far,
+              projectedDailyKwh:   mlRes.projected_daily_kwh,
+              projectedRemainingKwh: mlRes.projected_remaining_kwh,
+              trend:               mlRes.trend,
+              dataPoints:          mlRes.data_points
             },
             forecast: {
-              predictedMonthUnits: mlRes.predicted_month_units,
-              expectedCost:        mlRes.expected_cost,
-              flatRateCost:        mlRes.flat_rate_cost,
+              predictedMonthUnits:   mlRes.predicted_month_units,
+              // Full KSEB bill breakdown
+              ksebBill: {
+                monthlyUnits:      predictedCost.monthly_units,
+                energyCharge:      predictedCost.energy_charge,
+                fixedCharge:       predictedCost.fixed_charge,
+                electricityDuty:   predictedCost.electricity_duty,
+                totalBillInr:      predictedCost.total_bill_inr,
+                flatRateEstimate:  predictedCost.flat_rate_estimate
+              },
+              // Simple fields for frontend convenience
+              expectedCost:        predictedCost.total_bill_inr,
+              flatRateCost:        predictedCost.flat_rate_estimate,
               monthlyBudgetKwh:    mlRes.monthly_budget_kwh,
               budgetHeadroomKwh:   mlRes.budget_headroom_kwh,
               overBudget:          mlRes.over_budget,
               currency:            mlRes.currency,
               ratePerKwhUsed:      mlRes.rate_per_kwh_used
             },
+            dailyBreakdown: mlRes.daily_breakdown || [],
             recommendation: mlRes.over_budget
               ? `You are projected to exceed your budget by ${Math.abs(mlRes.budget_headroom_kwh).toFixed(1)} kWh. Consider reducing usage.`
-              : `You are on track — ${mlRes.budget_headroom_kwh.toFixed(1)} kWh headroom remaining.`
+              : `You are on track — ${(mlRes.budget_headroom_kwh || 0).toFixed(1)} kWh headroom remaining.`
           }
         });
       } catch (mlError) {
@@ -139,7 +160,7 @@ exports.forecastMonthly = async (req, res) => {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// @desc  Estimate current + projected monthly cost (ML /predict-cost)
+// @desc  Today's actual energy from ML (trapezoidal integration)
 // @route GET /api/forecast/cost
 // @access Private
 // ─────────────────────────────────────────────────────────────────────────────
@@ -156,6 +177,7 @@ exports.forecastCost = async (req, res) => {
     console.log(`   User: ${userId}  Room: ${roomId}`.gray);
 
     try {
+      // ML /predict-cost reads today's powerreadings and computes KSEB bill
       const mlRes = await mlService.predictCost({ userId, roomId });
 
       if (!mlRes.success) {
@@ -165,10 +187,15 @@ exports.forecastCost = async (req, res) => {
       return res.status(200).json({
         success: true,
         data: {
-          source: 'ml_backend',
+          source:                'ml_backend',
+          // Today's actual readings summary
+          todayKwh:              mlRes.today_kwh,
+          todayAvgPowerW:        mlRes.today_avg_power_w,
+          todayPeakPowerW:       mlRes.today_peak_power_w,
+          readingCount:          mlRes.reading_count,
+          // Monthly projection
           estimatedMonthlyUnits: mlRes.estimated_monthly_units,
-          estimatedCost:         mlRes.estimated_cost,
-          flatRateCost:          mlRes.flat_rate_cost,
+          estimatedCost:         mlRes.estimated_cost,   // KSEB slab (primary)
           currency:              mlRes.currency,
           ratePerKwhUsed:        mlRes.rate_per_kwh_used,
           monthlyBudgetKwh:      mlRes.monthly_budget_kwh,
@@ -182,7 +209,7 @@ exports.forecastCost = async (req, res) => {
       return res.status(503).json({
         success: false,
         message: 'ML Backend unavailable for cost prediction.',
-        error: mlError.message
+        error:   mlError.message
       });
     }
   } catch (error) {
@@ -192,17 +219,40 @@ exports.forecastCost = async (req, res) => {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// @desc  Forecast daily energy usage (local — ML has no daily endpoint)
+// @desc  Forecast daily energy usage (local — ML has no standalone daily forecast)
 // @route GET /api/forecast/daily
 // @access Private
 // ─────────────────────────────────────────────────────────────────────────────
 exports.forecastDaily = async (req, res) => {
   try {
+    const { roomId } = req.query;
+    const userId = req.user._id.toString();
+
+    // ── Try ML /energy/today for accurate today's reading ────────────────
+    let mlTodayData = null;
+    if (roomId) {
+      try {
+        const todayRes = await mlService.getEnergyToday({ userId, roomId });
+        if (todayRes.success) {
+          mlTodayData = todayRes;
+        }
+      } catch (e) {
+        console.warn('⚠️  ML /energy/today unavailable, using DB fallback'.yellow);
+      }
+    }
+
+    // ── Local fallback for 7-day trend ───────────────────────────────────
     const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-    const readings     = await PowerReading.find({
+    const query = {
       userId:    req.user._id,
-      timestamp: { $gte: sevenDaysAgo }
-    }).sort({ timestamp: 1 });
+      timestamp: { $gte: sevenDaysAgo },
+      ...(roomId && { roomId })
+    };
+
+    const readings     = await PowerReading.find(query).sort({ timestamp: 1 });
+    const settings     = await Settings.findOne({ userId: req.user._id });
+    const ratePerKwh   = settings?.budget?.ratePerKwh ?? 6.5;
+    const currency     = settings?.budget?.currency   ?? 'INR';
 
     const dailyConsumption = {};
     readings.forEach(r => {
@@ -216,20 +266,53 @@ exports.forecastDaily = async (req, res) => {
     const avgUsage = dailyValues.length ? dailyValues.reduce((a, b) => a + b, 0) / dailyValues.length : 0;
     const trend    = slope > 0 ? 'increasing' : slope < 0 ? 'decreasing' : 'stable';
 
-    const settings   = await Settings.findOne({ userId: req.user._id });
-    const ratePerKwh = settings?.budget?.ratePerKwh ?? 6.5;
-    const currency   = settings?.budget?.currency   ?? 'INR';
-
-    const todayStart    = new Date(); todayStart.setHours(0, 0, 0, 0);
-    const todayReadings = await PowerReading.find({ userId: req.user._id, timestamp: { $gte: todayStart } });
-    const todayUsage    = todayReadings.reduce((s, r) => s + r.energy, 0);
+    // Today's usage — prefer ML value if available
+    let todayUsage, todayAvgPower, todayPeakPower;
+    if (mlTodayData) {
+      todayUsage    = mlTodayData.kwh;
+      todayAvgPower = mlTodayData.avg_power_w;
+      todayPeakPower = mlTodayData.peak_power_w;
+    } else {
+      const todayStart    = new Date(); todayStart.setHours(0, 0, 0, 0);
+      const todayReadings = await PowerReading.find({
+        userId:    req.user._id,
+        timestamp: { $gte: todayStart },
+        ...(roomId && { roomId })
+      });
+      todayUsage    = todayReadings.reduce((s, r) => s + r.energy, 0);
+      todayAvgPower = todayReadings.length > 0
+        ? todayReadings.reduce((s, r) => s + r.power, 0) / todayReadings.length
+        : 0;
+      todayPeakPower = todayReadings.length > 0
+        ? Math.max(...todayReadings.map(r => r.power))
+        : 0;
+    }
 
     res.status(200).json({
       success: true,
       data: {
-        today:     { usage: todayUsage.toFixed(2), cost: (todayUsage * ratePerKwh).toFixed(2), currency },
-        tomorrow:  { predictedUsage: forecastedUsage.toFixed(2), predictedCost: (forecastedUsage * ratePerKwh).toFixed(2), currency, confidence: dailyValues.length >= 5 ? 'high' : 'medium' },
-        last7Days: { avgUsage: avgUsage.toFixed(2), trend, dailyData: Object.keys(dailyConsumption).map(date => ({ date, usage: dailyConsumption[date].toFixed(2) })) }
+        today: {
+          usage:       parseFloat(todayUsage.toFixed(4)),
+          cost:        (todayUsage * ratePerKwh).toFixed(2),
+          avgPowerW:   parseFloat((todayAvgPower || 0).toFixed(2)),
+          peakPowerW:  parseFloat((todayPeakPower || 0).toFixed(2)),
+          source:      mlTodayData ? 'ml_backend' : 'db_local',
+          currency
+        },
+        tomorrow: {
+          predictedUsage: forecastedUsage.toFixed(4),
+          predictedCost:  (forecastedUsage * ratePerKwh).toFixed(2),
+          currency,
+          confidence:     dailyValues.length >= 5 ? 'high' : 'medium'
+        },
+        last7Days: {
+          avgUsage:    avgUsage.toFixed(4),
+          trend,
+          dailyData: Object.keys(dailyConsumption).map(date => ({
+            date,
+            usage: dailyConsumption[date].toFixed(4)
+          }))
+        }
       }
     });
   } catch (error) {
@@ -244,10 +327,14 @@ exports.forecastDaily = async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 exports.getWeeklyTrend = async (req, res) => {
   try {
-    const { weeks = 7 } = req.query;
+    const { weeks = 7, roomId } = req.query;
     const weeksAgo = new Date(Date.now() - parseInt(weeks) * 7 * 24 * 60 * 60 * 1000);
 
-    const readings = await PowerReading.find({ userId: req.user._id, timestamp: { $gte: weeksAgo } }).sort({ timestamp: 1 });
+    const readings = await PowerReading.find({
+      userId:    req.user._id,
+      timestamp: { $gte: weeksAgo },
+      ...(roomId && { roomId })
+    }).sort({ timestamp: 1 });
 
     const weeklyConsumption = {};
     readings.forEach(r => {
@@ -258,7 +345,7 @@ exports.getWeeklyTrend = async (req, res) => {
     });
 
     const weeklyData = Object.keys(weeklyConsumption).sort().map((weekStart, i) => ({
-      week: `W${i + 1}`, weekStart, usage: weeklyConsumption[weekStart].toFixed(2)
+      week: `W${i + 1}`, weekStart, usage: weeklyConsumption[weekStart].toFixed(4)
     }));
 
     const vals = Object.values(weeklyConsumption);
@@ -273,8 +360,8 @@ exports.getWeeklyTrend = async (req, res) => {
       data: {
         weeklyData,
         comparison: {
-          lastWeek: lastWeekUsage.toFixed(2),
-          previousWeek: previousWeekUsage.toFixed(2),
+          lastWeek:      lastWeekUsage.toFixed(4),
+          previousWeek:  previousWeekUsage.toFixed(4),
           changePercent,
           trend: changePercent > 0 ? 'increase' : changePercent < 0 ? 'decrease' : 'stable'
         }

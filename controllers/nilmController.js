@@ -8,13 +8,13 @@ const mlService = require('../services/mlBackendService');
 const detectAppliances_local = (power) => {
   const signatures = [
     { name: 'Air Conditioner', min: 1000, max: 2000, confidence: 85 },
-    { name: 'Refrigerator', min: 100, max: 200, confidence: 80 },
-    { name: 'Washing Machine', min: 500, max: 1000, confidence: 75 },
-    { name: 'Microwave', min: 800, max: 1500, confidence: 70 },
-    { name: 'TV', min: 50, max: 200, confidence: 65 },
-    { name: 'Lights', min: 10, max: 100, confidence: 90 },
-    { name: 'Computer', min: 100, max: 300, confidence: 75 },
-    { name: 'Water Heater', min: 1500, max: 3000, confidence: 85 },
+    { name: 'Refrigerator',    min: 100,  max: 200,  confidence: 80 },
+    { name: 'Washing Machine', min: 500,  max: 1000, confidence: 75 },
+    { name: 'Microwave',       min: 800,  max: 1500, confidence: 70 },
+    { name: 'TV',              min: 50,   max: 200,  confidence: 65 },
+    { name: 'Lights',          min: 10,   max: 100,  confidence: 90 },
+    { name: 'Computer',        min: 100,  max: 300,  confidence: 75 },
+    { name: 'Water Heater',    min: 1500, max: 3000, confidence: 85 },
     { name: 'Electric Kettle', min: 1200, max: 2000, confidence: 80 }
   ];
 
@@ -62,29 +62,31 @@ exports.predictAppliances = async (req, res) => {
 
     // ── Try ML backend ──────────────────────────────────────────────────────
     try {
-      // 1. Detect active appliances
+      // 1. Detect active appliances (smart 3-tier: DB matching → LSTM → heuristic)
       const detectRes = await mlService.detectAppliances({ userId, roomId });
-
-      // 2. Get per-appliance power breakdown
-      const powerRes = await mlService.predictAppliancePower({ userId, roomId });
 
       if (!detectRes.success) {
         throw new Error(detectRes.error || 'ML detect-appliances returned success=false');
       }
 
-      // Build appliance array for DB storage
+      // 2. Get per-appliance power breakdown
+      //    /detect-appliances returns power_breakdown_w directly — no second call needed.
+      //    We still fetch predictAppliancePower separately for backwards-compat shape.
+      const powerRes = await mlService.predictAppliancePower({ userId, roomId });
+
       // active_appliances = ['air_conditioner', 'television', ...]
       // confidence        = { air_conditioner: 0.98, ... }
-      // power             = { air_conditioner: 1667.91, ... }
+      // power_breakdown_w = { air_conditioner: 1500, ... }   (from /detect-appliances)
+      // appliances        = { air_conditioner: 1500, ... }   (from /predict-appliance-power)
+      const powerBreakdown = detectRes.power_breakdown_w || (powerRes.success ? powerRes.appliances : {});
+
       const appliances = (detectRes.active_appliances || []).map(key => ({
         name: key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
         confidence: Math.round((detectRes.confidence?.[key] ?? 0.75) * 100),
-        powerConsumption: powerRes.success ? (powerRes.appliances?.[key] ?? 0) : 0
+        powerConsumption: powerBreakdown[key] ?? 0
       }));
 
-      const totalPower = powerRes.success
-        ? Object.values(powerRes.appliances || {}).reduce((s, v) => s + v, 0)
-        : 0;
+      const totalPower = detectRes.total_power_w ?? detectRes.mean_power_w ?? 0;
 
       // Save to appliancedetections
       const detection = await ApplianceDetection.create({
@@ -97,12 +99,15 @@ exports.predictAppliances = async (req, res) => {
       return res.status(200).json({
         success: true,
         data: {
-          source: 'ml_backend',
+          source:           'ml_backend',
+          detection_tier:   detectRes.detection_tier,
           active_appliances: detectRes.active_appliances,
-          confidence: detectRes.confidence,
-          appliance_power: powerRes.success ? powerRes.appliances : {},
+          confidence:       detectRes.confidence,
+          appliance_power:  powerBreakdown,
+          mean_power_w:     detectRes.mean_power_w,
+          unmatched_w:      detectRes.unmatched_w,
           totalPower,
-          detectionId: detection._id
+          detectionId:      detection._id
         }
       });
 
@@ -110,7 +115,7 @@ exports.predictAppliances = async (req, res) => {
       console.warn('⚠️  ML Backend unavailable, using fallback NILM'.yellow);
       console.warn(`   ${mlError.message}`.gray);
 
-      // ── Fallback ───────────────────────────────────────────────────────────
+      // ── Fallback ────────────────────────────────────────────────────────
       const latest = await PowerReading.findOne({ userId: req.user._id, roomId })
         .sort({ timestamp: -1 });
 
@@ -131,7 +136,7 @@ exports.predictAppliances = async (req, res) => {
         success: true,
         warning: 'Using fallback algorithm — ML backend unavailable.',
         data: {
-          source: 'fallback',
+          source:    'fallback',
           appliances: detectedAppliances,
           totalPower: latest.power,
           detectionId: detection._id
@@ -172,10 +177,11 @@ exports.detectAnomaly = async (req, res) => {
       return res.status(200).json({
         success: true,
         data: {
-          source: 'ml_backend',
+          source:                    'ml_backend',
           possible_faulty_appliance: result.possible_faulty_appliance,
-          room_threshold_used: result.room_threshold_used,
-          details: result.details || null
+          room_threshold_used:       result.room_threshold_used,
+          readings_used:             result.readings_used,
+          details:                   result.details || null
         }
       });
 
@@ -184,7 +190,7 @@ exports.detectAnomaly = async (req, res) => {
       return res.status(503).json({
         success: false,
         message: 'ML Backend unavailable for anomaly detection.',
-        error: mlError.message
+        error:   mlError.message
       });
     }
   } catch (error) {
@@ -229,10 +235,10 @@ exports.getApplianceHistory = async (req, res) => {
     });
 
     const statistics = Object.values(statsMap).map(s => ({
-      name: s.name,
+      name:           s.name,
       detectionCount: s.detectionCount,
-      avgPower: (s.totalPower      / s.detectionCount).toFixed(2),
-      avgConfidence: (s.totalConfidence / s.detectionCount).toFixed(1)
+      avgPower:       (s.totalPower      / s.detectionCount).toFixed(2),
+      avgConfidence:  (s.totalConfidence / s.detectionCount).toFixed(1)
     }));
 
     res.status(200).json({ success: true, count: history.length, data: { history, statistics } });
