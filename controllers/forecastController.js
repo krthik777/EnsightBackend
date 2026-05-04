@@ -160,9 +160,13 @@ exports.forecastMonthly = async (req, res) => {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// @desc  Today's actual energy from ML (trapezoidal integration)
+// @desc  Monthly cost prediction with 3-tier fallback
 // @route GET /api/forecast/cost
 // @access Private
+//
+// Tier 1: ML /predict-cost   — uses today's actual readings (most accurate)
+// Tier 2: ML /predict-month-end — EWMA over last 7 days (resilient, no today required)
+// Tier 3: Local DB           — last-resort calculation from stored readings
 // ─────────────────────────────────────────────────────────────────────────────
 exports.forecastCost = async (req, res) => {
   try {
@@ -176,26 +180,25 @@ exports.forecastCost = async (req, res) => {
     console.log('💰 Cost Forecast:'.cyan);
     console.log(`   User: ${userId}  Room: ${roomId}`.gray);
 
+    // ── Tier 1: /predict-cost (needs today's readings) ────────────────────
     try {
-      // ML /predict-cost reads today's powerreadings and computes KSEB bill
       const mlRes = await mlService.predictCost({ userId, roomId });
 
       if (!mlRes.success) {
         throw new Error(mlRes.error || 'predict-cost returned success=false');
       }
 
+      console.log('✅ Cost from /predict-cost (today readings)'.green);
       return res.status(200).json({
         success: true,
         data: {
-          source:                'ml_backend',
-          // Today's actual readings summary
+          source:                'ml_predict_cost',
           todayKwh:              mlRes.today_kwh,
           todayAvgPowerW:        mlRes.today_avg_power_w,
           todayPeakPowerW:       mlRes.today_peak_power_w,
           readingCount:          mlRes.reading_count,
-          // Monthly projection
           estimatedMonthlyUnits: mlRes.estimated_monthly_units,
-          estimatedCost:         mlRes.estimated_cost,   // KSEB slab (primary)
+          estimatedCost:         mlRes.estimated_cost,
           currency:              mlRes.currency,
           ratePerKwhUsed:        mlRes.rate_per_kwh_used,
           monthlyBudgetKwh:      mlRes.monthly_budget_kwh,
@@ -204,14 +207,106 @@ exports.forecastCost = async (req, res) => {
         }
       });
 
-    } catch (mlError) {
-      console.warn('⚠️  ML unavailable for cost prediction'.yellow);
-      return res.status(503).json({
-        success: false,
-        message: 'ML Backend unavailable for cost prediction.',
-        error:   mlError.message
-      });
+    } catch (costErr) {
+      // /predict-cost returns 404 when no readings exist for today yet.
+      // Fall back to /predict-month-end which works with any recent data.
+      console.warn(`⚠️  /predict-cost failed (${costErr.message}) — trying /predict-month-end...`.yellow);
     }
+
+    // ── Tier 2: /predict-month-end (EWMA, works without today's data) ─────
+    try {
+      const monthRes = await mlService.predictMonthEnd({ userId, roomId, lookback_days: 7 });
+
+      if (!monthRes.success) {
+        throw new Error(monthRes.error || 'predict-month-end returned success=false');
+      }
+
+      console.log('✅ Cost from /predict-month-end (EWMA fallback)'.green);
+      const pc = monthRes.predicted_cost || {};
+
+      return res.status(200).json({
+        success: true,
+        data: {
+          source:                'ml_month_end_fallback',
+          note:                  'No readings for today — cost estimated from EWMA of recent days',
+          todayKwh:              null,
+          todayAvgPowerW:        null,
+          todayPeakPowerW:       null,
+          readingCount:          monthRes.data_points ?? null,
+          estimatedMonthlyUnits: monthRes.predicted_month_units,
+          estimatedCost:         pc.total_bill_inr,
+          flatRateCost:          pc.flat_rate_estimate,
+          ksebBill: {
+            monthlyUnits:     pc.monthly_units,
+            energyCharge:     pc.energy_charge,
+            fixedCharge:      pc.fixed_charge,
+            electricityDuty:  pc.electricity_duty,
+            totalBillInr:     pc.total_bill_inr,
+            flatRateEstimate: pc.flat_rate_estimate
+          },
+          currency:              monthRes.currency,
+          ratePerKwhUsed:        monthRes.rate_per_kwh_used,
+          monthlyBudgetKwh:      monthRes.monthly_budget_kwh,
+          budgetHeadroomKwh:     monthRes.budget_headroom_kwh,
+          overBudget:            monthRes.over_budget,
+          trend:                 monthRes.trend,
+          daysElapsed:           monthRes.days_elapsed,
+          daysRemaining:         monthRes.days_remaining,
+          actualKwhSoFar:        monthRes.actual_kwh_so_far,
+          projectedDailyKwh:     monthRes.projected_daily_kwh
+        }
+      });
+
+    } catch (monthErr) {
+      console.warn(`⚠️  /predict-month-end also failed (${monthErr.message}) — using local DB`.yellow);
+    }
+
+    // ── Tier 3: Local DB (last resort) ───────────────────────────────────
+    const Settings     = require('../models/Settings');
+    const PowerReading = require('../models/PowerReading');
+
+    const settings  = await Settings.findOne({ userId: req.user._id });
+    const rate      = settings?.budget?.ratePerKwh ?? 6.5;
+    const budget    = settings?.budget?.monthly    ?? 400;
+    const currency  = settings?.budget?.currency   ?? 'INR';
+
+    const monthStart = new Date();
+    monthStart.setDate(1);
+    monthStart.setHours(0, 0, 0, 0);
+
+    const readings = await PowerReading.find({
+      userId: req.user._id, roomId,
+      timestamp: { $gte: monthStart }
+    });
+
+    const currentKwh     = readings.reduce((s, r) => s + (r.energy || 0), 0);
+    const daysElapsed    = new Date().getDate();
+    const avgDailyKwh    = daysElapsed > 0 ? currentKwh / daysElapsed : 0;
+    const projectedTotal = avgDailyKwh * 30;
+    const estimatedCost  = projectedTotal * rate;
+
+    console.log('✅ Cost from local DB fallback'.green);
+    return res.status(200).json({
+      success: true,
+      data: {
+        source:                'local_db_fallback',
+        note:                  'ML backend unavailable — calculated from local DB readings',
+        todayKwh:              null,
+        todayAvgPowerW:        null,
+        readingCount:          readings.length,
+        estimatedMonthlyUnits: parseFloat(projectedTotal.toFixed(2)),
+        estimatedCost:         parseFloat(estimatedCost.toFixed(2)),
+        currency,
+        ratePerKwhUsed:        rate,
+        monthlyBudgetKwh:      budget,
+        budgetHeadroomKwh:     parseFloat((budget - projectedTotal).toFixed(2)),
+        overBudget:            projectedTotal > budget,
+        actualKwhSoFar:        parseFloat(currentKwh.toFixed(4)),
+        projectedDailyKwh:     parseFloat(avgDailyKwh.toFixed(4)),
+        daysElapsed
+      }
+    });
+
   } catch (error) {
     console.error('❌ forecastCost error:'.red, error.message);
     res.status(500).json({ success: false, message: error.message });

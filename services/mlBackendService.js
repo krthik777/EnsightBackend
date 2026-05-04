@@ -1,7 +1,9 @@
 const axios = require('axios');
 
 // ML Backend Base URL — Flask server on port 5050
-const ML_BACKEND_URL = process.env.ML_BACKEND_URL || 'https://ensight-ml.onrender.com';
+// const ML_BACKEND_URL = process.env.ML_BACKEND_URL || 'https://ensight-ml.onrender.com';
+const ML_BACKEND_URL = process.env.ML_BACKEND_URL || 'http://localhost:5050';
+
 
 const mlClient = axios.create({
   baseURL: ML_BACKEND_URL,
